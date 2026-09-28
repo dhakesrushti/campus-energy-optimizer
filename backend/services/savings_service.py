@@ -1,6 +1,6 @@
 from database.mongo import db
 from services.prediction_service import prediction_service
-from utils.validators import is_valid_reading
+from utils.validators import is_valid_reading, sanitize_reading
 import pandas as pd
 
 def calculate_savings():
@@ -10,7 +10,7 @@ def calculate_savings():
     readings = []
     for reading in cursor:
         if is_valid_reading(reading):
-            readings.append(reading)
+            readings.append(sanitize_reading(reading))
 
     if not readings:
         return None

@@ -1,22 +1,23 @@
 import logging
 
-def is_valid_reading(reading):
-    required_fields = ['temperature', 'humidity', 'voltage', 'current', 'powerFactor', 'occupancy', 'power', 'timestamp']
-    for field in required_fields:
-        if field not in reading:
-            return False
-        if str(reading[field]).upper() == "NA":
-            return False
+def sanitize_reading(reading):
+    required_fields = ['temperature', 'humidity', 'voltage', 'current', 'powerFactor', 'power', 'energy']
     
-    # Check numeric fields
-    numeric_fields = ['temperature', 'humidity', 'voltage', 'current', 'powerFactor', 'power']
-    for field in numeric_fields:
-        try:
-            float(reading[field])
-        except ValueError:
-            return False
-            
-    return True
+    # Ensure all required fields exist, if not set them to 0.0
+    for field in required_fields:
+        if field not in reading or str(reading.get(field)).upper() == "NA":
+            reading[field] = 0.0
+        else:
+            try:
+                reading[field] = float(reading[field])
+            except ValueError:
+                reading[field] = 0.0
+                
+    return reading
+
+def is_valid_reading(reading):
+    # Now we accept all readings that at least have a timestamp
+    return 'timestamp' in reading
 
 def get_latest_valid_reading(collection):
     try:
@@ -25,6 +26,7 @@ def get_latest_valid_reading(collection):
         
         for reading in cursor:
             if is_valid_reading(reading):
+                reading = sanitize_reading(reading)
                 # Remove _id for JSON serialization
                 reading.pop('_id', None)
                 return reading

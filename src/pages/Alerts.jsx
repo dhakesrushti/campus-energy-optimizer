@@ -1,64 +1,98 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import GlassCard from '../components/GlassCard';
-import { AlertCircle, AlertTriangle, Info, BellRing } from 'lucide-react';
-import { clsx } from 'clsx';
-
-const alerts = [
-  { id: 1, type: 'Critical', message: 'High Temperature Alert in Server Room B', time: '10 mins ago' },
-  { id: 2, type: 'Warning', message: 'Excessive Power Consumption in Lab A201', time: '45 mins ago' },
-  { id: 3, type: 'Critical', message: 'Sensor Offline: PZEM-004T Node 4', time: '1 hour ago' },
-  { id: 4, type: 'Warning', message: 'Motion Detected After Hours: Main Hall', time: '2 hours ago' },
-  { id: 5, type: 'Info', message: 'System update completed successfully', time: '1 day ago' }
-];
+import { fetchHistory } from '../services/api';
+import { AlertTriangle, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export default function Alerts() {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const data = await fetchHistory(100); // Fetch recent history to scan for anomalies
+        setHistory(data);
+        setError(null);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadHistory();
+    const interval = setInterval(loadHistory, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) return <div className="text-white text-lg">Scanning for system anomalies...</div>;
+  if (error) return <div className="text-red-500 text-lg">Error loading alerts: {error}</div>;
+
+  // Filter for actual anomalies (e.g. power > 50 and occupancy is false, or extremely high power)
+  // Since we don't have expected_power in history endpoint, we use a heuristic based on occupancy
+  const anomalies = history.filter(r => {
+    const isVacantButConsuming = (!r.occupancy && r.power > 50);
+    const isExtremeConsumption = (r.power > 1500); // Assuming 1.5kW is very high for a single node
+    return isVacantButConsuming || isExtremeConsumption;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Alerts & Notifications</h2>
-          <p className="text-gray-400 mt-1">System events and anomalies</p>
+          <h2 className="text-2xl font-bold text-white">System Alerts</h2>
+          <p className="text-gray-400 mt-1">Real-time anomaly detection logs</p>
         </div>
-        <button className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg hover:bg-white/10 transition-colors text-sm font-medium flex items-center">
-          <BellRing className="w-4 h-4 mr-2" />
-          Mark All Read
-        </button>
+        <div className="px-4 py-2 bg-red-500/20 text-red-500 rounded-lg border border-red-500/30 text-sm font-medium">
+          {anomalies.length} Alerts Found
+        </div>
       </div>
 
-      <GlassCard className="p-0">
-        <div className="divide-y divide-white/10">
-          {alerts.map((alert) => (
-            <div key={alert.id} className="p-6 flex items-start space-x-4 hover:bg-white/5 transition-colors cursor-pointer">
-              <div className={clsx(
-                "p-2 rounded-full",
-                alert.type === 'Critical' ? 'bg-red-500/20 text-red-500' :
-                alert.type === 'Warning' ? 'bg-yellow-500/20 text-yellow-500' :
-                'bg-blue-500/20 text-blue-500'
-              )}>
-                {alert.type === 'Critical' ? <AlertCircle className="w-5 h-5" /> :
-                 alert.type === 'Warning' ? <AlertTriangle className="w-5 h-5" /> :
-                 <Info className="w-5 h-5" />}
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <h4 className="text-white font-medium">{alert.message}</h4>
-                  <span className="text-xs text-gray-500">{alert.time}</span>
+      <div className="space-y-4">
+        {anomalies.length === 0 ? (
+          <GlassCard className="p-8 text-center text-gray-400">
+            No system anomalies detected in recent history. All rooms operating normally.
+          </GlassCard>
+        ) : (
+          anomalies.map((alert, idx) => (
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+            >
+              <GlassCard className="flex items-start justify-between border-l-4 border-l-red-500">
+                <div className="flex space-x-4">
+                  <div className="mt-1 bg-red-500/20 p-2 rounded-full">
+                    <AlertTriangle className="w-6 h-6 text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      {alert.power > 1500 ? 'Critical Power Surge Detected' : 'Unoccupied Power Consumption'}
+                    </h3>
+                    <p className="text-gray-300 mt-1">
+                      {alert.power > 1500 
+                        ? `Abnormally high energy consumption detected (${alert.power} W).` 
+                        : `Room is empty (Occupancy: False) but consuming ${alert.power} W of power.`}
+                    </p>
+                    <div className="flex items-center space-x-2 mt-3 text-sm text-gray-400">
+                      <Clock className="w-4 h-4" />
+                      <span>{new Date(alert.timestamp).toLocaleString()}</span>
+                      <span className="mx-2">•</span>
+                      <span>Room ID: {alert.roomId || 'ROOM_101'}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1">
-                  <span className={clsx(
-                    "text-xs font-semibold px-2 py-0.5 rounded-full border",
-                    alert.type === 'Critical' ? 'border-red-500/30 text-red-400 bg-red-500/10' :
-                    alert.type === 'Warning' ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/10' :
-                    'border-blue-500/30 text-blue-400 bg-blue-500/10'
-                  )}>
-                    {alert.type}
-                  </span>
+                <div className="px-3 py-1 bg-red-500/10 text-red-400 rounded text-xs font-semibold uppercase tracking-wider">
+                  High Severity
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
+              </GlassCard>
+            </motion.div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
